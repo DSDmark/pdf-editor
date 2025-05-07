@@ -1,48 +1,86 @@
+import { Box } from "@mui/material";
 import { useEffect, useRef } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import "pdfjs-dist/build/pdf.worker.entry";
-import { PDFDocument, rgb } from "pdf-lib";
 
-export async function addTextToPDF(file: File) {
-  const bytes = await file.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(bytes);
-  const pages = pdfDoc.getPages();
-  const firstPage = pages[0];
-
-  firstPage.drawText("Hello, edited PDF!", {
-    x: 50,
-    y: 700,
-    size: 24,
-    color: rgb(0, 0.53, 0.71),
-  });
-
-  const modifiedPdfBytes = await pdfDoc.save();
-  const blob = new Blob([modifiedPdfBytes], { type: "application/pdf" });
-  return URL.createObjectURL(blob);
-}
-
-export function PDFRenderer({ file }: { file: any }) {
+export function PDFRenderer({ file }: { file: File }) {
   const canvasRef = useRef(null);
+  const renderTaskRef: any = useRef(null);
 
   useEffect(() => {
     if (!file) return;
+    let isMounted = true;
+    import("pdfjs-dist").then((pdfjsLib) => {
+      if (!isMounted) return;
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const typedarray = new Uint8Array(reader.result as ArrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
-      const page = await pdf.getPage(1);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url
+      ).href;
 
-      const canvas: any = canvasRef.current;
-      const context = canvas.getContext("2d");
-      const viewport = page.getViewport({ scale: 1.5 });
+      const reader: any = new FileReader();
+      reader.onload = async () => {
+        if (!isMounted) return;
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      page.render({ canvasContext: context, viewport });
+        const bytes = new Uint8Array(reader.result);
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const page = await pdf.getPage(1);
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale });
+
+        const canvas: any = canvasRef.current;
+        if (!canvas) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const context = canvas.getContext("2d");
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+        }
+
+        renderTaskRef.current = page.render({
+          canvasContext: context,
+          viewport,
+        });
+
+        try {
+          await renderTaskRef.current.promise;
+          renderTaskRef.current = null;
+        } catch (error: any) {
+          if (error.name === "RenderingCancelledException") {
+            console.log("Rendering was cancelled");
+          } else {
+            console.error("Rendering error:", error);
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    return () => {
+      isMounted = false;
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+      }
     };
-    reader.readAsArrayBuffer(file);
   }, [file]);
 
-  return <canvas ref={canvasRef} />;
+  return (
+    <Box
+      sx={{
+        width: "100%",
+        overflowX: "auto",
+        border: "1px solid #ccc",
+        borderRadius: 2,
+        p: 1,
+        backgroundColor: "#fafafa",
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{ display: "block", maxWidth: "100%", height: "auto" }}
+      />
+    </Box>
+  );
 }
