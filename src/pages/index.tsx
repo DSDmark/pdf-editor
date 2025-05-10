@@ -21,7 +21,7 @@ export default function PDFEditorPage() {
         <Toolbar>
           <PictureAsPdfIcon sx={{ mr: 1 }} />
           <Typography variant="h6" component="div">
-            PDF File Editor
+            PDF File previewer
           </Typography>
         </Toolbar>
       </AppBar>
